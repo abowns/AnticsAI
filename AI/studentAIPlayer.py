@@ -2,9 +2,9 @@
 
 ##
 # 
-# Homework 3
+# Homework 4
 #
-# Author(s): Caleb Piekstra, No Partner
+# Author(s): Alex Bowns, Caleb Piekstra
 #
 import random, time
 from Player import *
@@ -621,5 +621,3 @@ class AIPlayer(Player):
     def registerWin(self, hasWon):
         #method templaste, not implemented
         pass
-
-        
