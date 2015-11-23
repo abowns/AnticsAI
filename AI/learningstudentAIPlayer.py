@@ -58,19 +58,12 @@ class AIPlayer(Player):
         self.gameCount = 1
         #the alpha value for how quick we want our neural net to change its weights
         self.alphaQ = 2.0
-        self.hardCodedInputWeightList =  [[-0.19900395667672993, 1.0107123512356682, -0.1298513227537575, -0.5363628898331391, 0.9491806697895203, -0.5390457738796782, 0.6581287850217622, 0.9806648887448136, -0.6415356619034415, -0.9521839236248851, -0.1651694437169518, -0.9141547769894994],
-                                          [-1.000804615257194, -0.3314825118026529, 0.7717712901385938, -0.003779220054069834, 0.47248568315013034, 0.364087140953163, -0.3336789759073255, 0.9523936863969136, -0.7448709366823567, 0.38670585823368336, -0.35665170454039846, -0.21580881583597852],
-                                          [215.56998847257935, 216.840792289589, 216.13580301114175, 216.61036316666394, 215.893962258438, 216.81322363468317, 216.3238029071687, 215.63701129491668, 216.90709024069272, 216.98870189667562, 215.37189464218244, 215.9778942978929],
-                                          [-291.4596372475496, -292.45111508892586, -292.53568917281353, -292.2057214105054, -291.7522643459505, -291.9121852493282, -292.61170103791386, -292.21945263396594, -291.3265199960183, -292.72546832935944, -292.2205882482672, -291.4529095513118],
-                                          [-0.9499935655455531, 0.9689328791763545, 0.22096958160240088, -0.35757467846305, 0.1908454853206849, -0.6740250430109169, -0.8059500866346327, 0.13457582474339258, 0.29666309650576617, -0.5921148887682253, 0.11260784698254467, -0.7399385951923101],
-                                          [5.912097824174489, 5.4671037343946205, 6.1610653054492985, 5.3650754240659655, 5.47728759076573, 5.818008756294898, 5.922044312612913, 6.722173140026038, 6.471913074861952, 5.139005251058886, 5.424991848898831, 5.900625983642664]]
-        self.hardCodedLayerWeightList =   [-0.5454092010800999, 0.13967306660718454, 0.6939884701926687, 0.365651975635759, -0.24165962145021033, 0.23459032598955262, -0.3519660930798465, 0.9790079880896103, 0.2846030782449516, 0.37926444911770063, -0.3960423900436394, 0.4188261606951956]
         self.inputWeightList = []
         self.layerWeightList = []
 
         #self.inputWeightList = []
         # Juanito - He is juan week old
-        super(AIPlayer,self).__init__(inputPlayerId, "Juanito")
+        super(AIPlayer,self).__init__(inputPlayerId, "Learning_Juanito")
 
     ##
     #mapInputs
@@ -181,45 +174,6 @@ class AIPlayer(Player):
         return closeIdx
 
     ##
-    #runHardCodedNetwork
-    #Description: run the hard coded weights for the neural network
-    #
-    #Parameters:
-    #   inputList - the 6 evaluations made by the player
-    #   targetNode - the targeted node to return
-    #
-    #Return
-    #   the move
-    #
-
-    def runHardCodedNetwork(self, inputList, targetNode):
-        finalInput = [] #the final input
-        layerInputList = [] #a list of all layer inputs created from the input nodes and weights
-
-        #create the input value for every single 'node' in the hidden layer
-        input = 0.0
-        for w in range(0, 2*len(inputList)):
-            for i in range(0, len(inputList)):
-                input += (inputList[i]*self.hardCodedInputWeightList[i][w])
-            layerInputList.append(input)
-            input = 0.0
-
-        #get the list of output values for each 'node' in the hidden layer
-        layerOutputList = self.gFunction(layerInputList)
-
-        #determine single input from the sum of all of the layer 'nodes'
-        myValue = 0.0
-        for z in range(0, len(self.layerWeightList)):
-            myValue += (layerOutputList[z]*self.hardCodedLayerWeightList[z])
-        finalInput.append(myValue)
-        #get the score for this node
-        finalOutput = self.gFunction(finalInput)
-
-        #create the move and return it
-        move = targetNode["move"]
-        return targetNode["move"]
-
-    ##
     #neuralNetOutput
     #Description: Use the neural networking algorithm to determine which state to go to.
     #
@@ -281,7 +235,12 @@ class AIPlayer(Player):
             #final output not close enough to target, adjust all weights and try again.
             else:
                 finalOutputError = targetValue - finalOutput[0]
+                #reverse error val if it is positive
+                #if finalOutputError > 0:
+                #   finalOutputError = -finalOutputError
+
                 #create new weights for the layer and input weight lists
+                #tuple = self.backPropogation(layerWeightList,layerOutputList, finalOutputError, finalOutput, inputList, inputWeightList)
                 tuple = self.backPropogation(layerOutputList, finalOutputError, finalOutput, inputList)
                 self.layerWeightList = tuple[0]
                 self.inputWeightList = tuple[1]
@@ -426,6 +385,7 @@ class AIPlayer(Player):
     #Return: Move(moveType [int], coordList [list of 2-tuples of ints], buildType [int]
     #
     def getMove(self, currentState):
+        print "###################Begin Analyzing Move###################\n"
         # save our id
         self.playerId = currentState.whoseTurn
         #create the target node for our neural network to analyze
@@ -433,8 +393,12 @@ class AIPlayer(Player):
         targetNode = self.alpha_beta_search2(initNode)
         #apply a neural network to learn the same result as what the original minimax would've learned
         inputList = self.mapCurrentState(currentState)
-        neuralResult = self.runHardCodedNetwork(inputList, targetNode)
-        return neuralResult
+        neuralResult = self.neuralNetOutput(currentState, inputList, targetNode)
+        print "\n########Move Analyzed########"
+        print "Output Evaluation Number: ", neuralResult[0]
+        print ""
+
+        return neuralResult[1]
 
     ##
     #mapCurrentState
@@ -472,7 +436,7 @@ class AIPlayer(Player):
         else:
             #enemy queen health
             inputList.append(1.0 - float(enemyQueen.health/ float(UNIT_STATS[QUEEN][HEALTH])))
-            #if down to no extra ants, make sure to add a 0.0 to the inputList
+            #TODO if we are down to no extra ants
             if len(playerAnts) == 1 and playerAnts[0].type == QUEEN:
                  inputList.append(float(0))
             # player ants moving closer to the queen
@@ -495,6 +459,12 @@ class AIPlayer(Player):
                     enemyDistFromQueen = float(self.distClosestAnt(currentState, ant.coords))
                     queenSafety = float(enemyDistFromQueen / maxDist)
                     inputList.append(queenSafety)
+
+        if len(inputList) > 6:
+            inputList[:5]
+        while len(inputList) < 6:
+            inputList.append(0.0)
+
 
         return inputList
 
