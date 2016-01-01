@@ -2,20 +2,16 @@
 
 ##
 # 
-# Homework 3
+# Homework 7 - Neural Networking
 #
-# Author(s): Caleb Piekstra, No Partner
+# Author(s): Alex Bowns, Lysa Pinto
 #
-import random, time
 from Player import *
-from Constants import *
-from Construction import CONSTR_STATS
 from Construction import Construction
-from Ant import UNIT_STATS
 from Ant import Ant
-from Move import Move
-from GameState import addCoords
 from AIPlayerUtils import *
+import random
+import math
 
 # representation of inf
 INFINITY = 9999
@@ -59,10 +55,434 @@ class AIPlayer(Player):
     def __init__(self, inputPlayerId):
         # a depth limit for the search algorithm
         self.maxDepth = 3
-        # Agent_WillRobinson - Robinson, a man on a mission
-        super(AIPlayer,self).__init__(inputPlayerId, "Agent_Will_Robinson") 
+        self.gameCount = 1
+        #the alpha value for how quick we want our neural net to change its weights
+        self.alphaQ = 2.0
+        self.inputWeightList = []
+        self.layerWeightList = []
 
-        
+        #self.inputWeightList = []
+        # Juanito - He is juan week old
+        super(AIPlayer,self).__init__(inputPlayerId, "Learning_Juanito")
+
+    ##
+    #mapInputs
+    #Description: Take the list of all possible moves from a current game state.
+    #   Then create an array (of floating point numbers) where each element in the array
+    #   is an evaluation score from the evaluationState function of the theoretical
+    #   state that would emerge from the specific move.
+    #
+    #Parameters:
+    #   currentState - The current state of the board
+    #
+    #Return:
+    #   inputArray[] - a mapped array of inputs which are now floating pt numbers between 0-1
+    def mapInputs(self, currentState):
+        inputArray = []
+        copiedState = None
+        for move in listAllLegalMoves(currentState):
+            copiedState = self.processMove(currentState, move)
+            inputArray.append(self.evaluateState(copiedState))
+        return inputArray
+
+    ##
+    #initRandomWeights
+    #Description: create a list of random weights paired with a specific input from the inputArray[]
+    #
+    #Parameters:
+    #   inputList - a mapped array of inputs which are now floating pt numbers between 0-1
+    #
+    #Return:
+    #   allInputsWeightList - a list of weights for every single input of the inputList[]
+    #
+    def initRandomWeight(self, inputList):
+        allInputsWeightList = []
+        weightsForAnInput = []
+
+        for i in inputList:
+            for p in range(0, 2*len(inputList)):
+                #initialize all the weights for a single input
+                weightsForAnInput.append(random.uniform(-1, 1))
+            #append the list of weights from a single input to the allInputsWeightList
+            allInputsWeightList.append(weightsForAnInput)
+            weightsForAnInput = []
+
+        return allInputsWeightList
+
+    ##
+    #layerRandomWeight
+    #Description: create a list of random weights for every single output of the layer 'nodes'
+    #
+    #Parameters:
+    #   layerOutputList - a mapped array of outputs which are now floating pt numbers between 0-1
+    #
+    #Return:
+    #   layerWeightList - a list of weights for every single output in the layer section
+    #
+    def layerRandomWeight(self, layerOutputList):
+        layerWeightList = []
+        #initialize a random weight for each layer 'node'
+        for i in range(0, len(layerOutputList)):
+            layerWeightList.append(random.uniform(-1, 1))
+
+        return layerWeightList
+
+    ##
+    #gFunction
+    #Description: For every input, i,  given, apply a function g(i) which returns an output
+    #value for the layer node.
+    #
+    #Parameters:
+    #   inputList - the list of inputs to be run on
+    #
+    #Returns:
+    #   outputList - a list of output values for each input that was run
+    def gFunction(self, inputList):
+        value = 0.0
+        outputList = []
+        #for each input value, i, in the input list, apply g(i)
+        for i in inputList:
+            negI = -i
+            value = 1.0/(1.0 + math.exp(negI))
+            outputList.append(value)
+
+        return outputList
+
+    ##
+    #mapOutput
+    #Description: Find the  index of the best move that the neural network has decided.
+    #
+    #Parameters:
+    #   output - the final output of the neural network, recorded as a float between 0-1
+    #   inputList - the list of all original input values
+    #
+    #Return:
+    #   closeIdx the index of the element in inputList with the closest value to the output value
+    #
+    def mapOutput(self, output, inputList):
+        closest = INFINITY
+        idx = 0
+        closeIdx = 0
+        #find the closest value from inputList to the output of the neural network,
+        # then record the index of the closest value
+        for i in inputList:
+           if abs(output - i) < closest:
+               closest = i
+               closeIdx = idx
+           idx += idx
+
+        return closeIdx
+
+    ##
+    #neuralNetOutput
+    #Description: Use the neural networking algorithm to determine which state to go to.
+    #
+    #Parameters:
+    #   currentState - the currentState of the board
+    #   inputList - the list of values that represent an evaluation of each available move from the current state
+    #   targetNode - The target node that we want our neural network to follow
+    #
+    #Return:
+    #   the outputted move that we would select
+    #
+    def neuralNetOutput(self, currentState, inputList, targetNode):
+        if len(inputList) != 6:
+            print "hi"
+        loopCount = 0
+        targetValue = targetNode["state_value"]
+        #a helper boolean to tell our network to keep adjusting all of its weights when 'true'
+        keepLooping = True
+        if self.inputWeightList == []:
+            self.inputWeightList = self.initRandomWeight(inputList)
+        finalInput = [] #the final input
+        layerInputList = [] #a list of all layer inputs created from the input nodes and weights
+
+        #create the input value for every single 'node' in the hidden layer
+        input = 0.0
+        for w in range(0, 2*len(inputList)):
+            for i in range(0, len(inputList)):
+                input += (inputList[i]*self.inputWeightList[i][w])
+            layerInputList.append(input)
+            input = 0.0
+
+        #get the list of output values for each 'node' in the hidden layer
+        layerOutputList = self.gFunction(layerInputList)
+        #create a list of random weights, each weight is paired with a layer 'node'
+        if self.layerWeightList == []:
+            self.layerWeightList = self.layerRandomWeight(layerOutputList)
+
+        #keep readjusting until final output is close enough
+        while keepLooping:
+            #determine single input from the sum of all of the middle 'nodes' output*weight
+            myValue = 0.0
+            for z in range(0, len(self.layerWeightList)):
+                myValue += (layerOutputList[z]*self.layerWeightList[z])
+            finalInput.append(myValue)
+            #get the score for this node
+            finalOutput = self.gFunction(finalInput)
+            #if we've looped long enough, just return the value
+            if loopCount > 50:
+                return (finalOutput[0], targetNode["move"])
+            # if the final output is close enough to the target value, parse the output to a move
+            if abs(targetValue - finalOutput[0]) < .03:
+                keepLooping = False
+                #index = self.mapOutput(finalOutput[0], inputList)
+                #move = listAllLegalMoves(currentState)[index]
+                move = targetNode["move"]
+                return (finalOutput[0], targetNode["move"])
+                #return (inputWeightList, layerWeightList, finalOutput[0], move)
+
+            #final output not close enough to target, adjust all weights and try again.
+            else:
+                finalOutputError = targetValue - finalOutput[0]
+                #reverse error val if it is positive
+                #if finalOutputError > 0:
+                #   finalOutputError = -finalOutputError
+
+                #create new weights for the layer and input weight lists
+                #tuple = self.backPropogation(layerWeightList,layerOutputList, finalOutputError, finalOutput, inputList, inputWeightList)
+                tuple = self.backPropogation(layerOutputList, finalOutputError, finalOutput, inputList)
+                self.layerWeightList = tuple[0]
+                self.inputWeightList = tuple[1]
+
+                print "#####################################"
+                print "Target: ", targetValue
+                print "Output: ", finalOutput[0]
+                print "Error: ", targetValue-finalOutput[0]
+                print "Continuing backpropogation..."
+                print "\n "
+
+                layerInputList = []
+                layerOutputList = []
+                #rescore layer input list
+                for w in range(0, 2*len(self.inputWeightList)):
+                    for i in range(0, len(inputList)):
+                        input += (inputList[i]*self.inputWeightList[i][w])
+                    layerInputList.append(input)
+                    input = 0.0
+                #rescore layer output list
+                layerOutputList = self.gFunction(layerInputList)
+
+                ##TODO reused code, make helper
+                #determine single input from the sum of all of the hidden 'nodes' output*weight
+                myValue = 0.0
+                finalInput = []
+                for z in range(0, len(self.layerWeightList)):
+                    myValue += (layerOutputList[z]*self.layerWeightList[z])
+                #apply the determined final input value to a list, (so we can use an already made function)
+                finalInput.append(myValue)
+                #get the score for this node
+                finalOutput = self.gFunction(finalInput)
+
+                loopCount = loopCount + 1
+
+
+    ##
+    #backPropogation
+    #Description: Calculate the new weights for both the input weights and layer weights.
+    #Begin by calculating the new weights in the layer section, then use the error and
+    #error term values as references to calculate the new weights in the input section (with a separate method).
+    #
+    #Parameters:
+    #   weightList - the list of weights
+    #   outputError - the error of the outputNode
+    #   finalOutput - the single output evaluation score given
+    #
+    #Return:
+    #   the new list of weights
+    def backPropogation(self, layerOutputList, finalOutputError, finalOutput, inputList):
+        #calculate the error term for the final output node of the network
+        a = finalOutput[0]
+        deltaOut = a*(1.0-a)*finalOutputError
+        #instance variables to hold the error, error term, and new weights for all of the layer nodes
+        errorLayerList = []
+        deltaLayerList = []
+        newLayerWeightList = []
+
+        #calculate error for all of the layer 'nodes'
+        for i in range(0, len(self.layerWeightList)):
+           err = self.layerWeightList[i]*deltaOut
+           errorLayerList.append(err)
+           err = 0
+
+        #calculate error term for all of the layer 'nodes'
+        for i in range(0, len(self.layerWeightList)):
+            errTerm = layerOutputList[i]*(1.0-layerOutputList[i])*finalOutputError
+            deltaLayerList.append(errTerm)
+            errTerm = 0
+
+        #calculate new weights for the layer 'nodes'
+        for i in range(0, len(self.layerWeightList)):
+            wNew = self.layerWeightList[i] + (float(self.alphaQ) * deltaLayerList[i] * layerOutputList[i])
+            newLayerWeightList.append(wNew)
+            wNew = 0
+
+        propogatedInputList = self.backPropogationInputWeights(inputList, deltaLayerList)
+        #return a tuple of the new weights from the input and layer nodes
+        return (newLayerWeightList, propogatedInputList)
+
+    ##
+    #backPropogationInputWeights
+    #Description: Apply propogation to create new weights for every single
+    #
+    #Parameters:
+    #   inputWeightList - the list of weights attached to all of the input nodes
+    #   inputList - the list of inputs
+    #   deltaList - the list of error terms
+    #
+    def backPropogationInputWeights(self, inputList, deltaList):
+        inputErrorList = []
+        deltaInputList = []
+        error = 0.0
+        #calculate error for all of the input 'nodes'
+        for i in range(0, len(inputList)):
+            for z in range(0, 2*len(inputList)):
+                error += self.inputWeightList[i][z]*deltaList[z]
+
+            inputErrorList.append(error)
+            error = 0.0
+
+        #calculate error term (delta) for every input 'node'
+        for i in range(0, len(inputList)):
+             errTerm = inputList[i]*(1-inputList[i])*inputErrorList[i]
+             deltaInputList.append(errTerm)
+             errTerm = 0.0
+
+        singleNodeWeightList = []
+        allInputWeightList = []
+
+        #calculate new weights for the layer 'nodes'
+        for i in range(0, len(self.inputWeightList)):
+            for z in range(0, 2*len(self.inputWeightList)):
+                wL = self.inputWeightList[i][z]
+                mult = (self.alphaQ * deltaInputList[i] * inputList[i])
+                wNew = self.inputWeightList[i][z] + (self.alphaQ * deltaInputList[i] * inputList[i])
+                singleNodeWeightList.append(wNew)
+                wNew = 0.0
+            allInputWeightList.append(singleNodeWeightList)
+            singleNodeWeightList = []
+
+        return allInputWeightList
+
+    ##
+    #getMove
+    #Description: The getMove method corresponds to the play phase of the game
+    #and requests from the player a Move object. All types are symbolic
+    #constants which can be referred to in Constants.py. The move object has a
+    #field for type (moveType) as well as field for relevant coordinate
+    #information (coordList). If for instance the player wishes to move an ant,
+    #they simply return a Move object where the type field is the MOVE_ANT constant
+    #and the coordList contains a listing of valid locations starting with an Ant
+    #and containing only unoccupied spaces thereafter. A build is similar to a move
+    #except the type is set as BUILD, a buildType is given, and a single coordinate
+    #is in the list representing the build location. For an end turn, no coordinates
+    #are necessary, just set the type as END and return.
+    #
+    #Parameters:
+    #   currentState - The current state of the game at the time the Game is
+    #       requesting a move from the player.(GameState)
+    #
+    #Return: Move(moveType [int], coordList [list of 2-tuples of ints], buildType [int]
+    #
+    def getMove(self, currentState):
+        print "###################Begin Analyzing Move###################\n"
+        # save our id
+        self.playerId = currentState.whoseTurn
+        #create the target node for our neural network to analyze
+        initNode = self.createNode(None, currentState, None)
+        targetNode = self.alpha_beta_search2(initNode)
+        #apply a neural network to learn the same result as what the original minimax would've learned
+        inputList = self.mapCurrentState(currentState)
+        neuralResult = self.neuralNetOutput(currentState, inputList, targetNode)
+        print "\n########Move Analyzed########"
+        print "Output Evaluation Number: ", neuralResult[0]
+        print ""
+
+        return neuralResult[1]
+
+    ##
+    #mapCurrentState
+    #Description: Map the state of the game to create the neural networks input list.
+    #
+    #Parameters:
+    #   currentState - the currentState of the game
+    #
+    #Return:
+    #   inputList - the list of 6 different input values
+    #
+    def mapCurrentState(self, currentState):
+        #this will store all a value between 0-1 for factors our evaluation function considers as well
+        inputList = []
+        # get a reference to the player's inventory
+        playerInv = currentState.inventories[currentState.whoseTurn]
+        # get a reference to the enemy player's inventory
+        enemyInv = currentState.inventories[(currentState.whoseTurn+1) % 2]
+        # get a reference to the enemy's queen
+        enemyQueen = enemyInv.getQueen()
+        #player ants reference
+        playerAnts = playerInv.ants
+
+        #player food count
+        inputList.append(float(playerInv.foodCount/11.0))
+
+        #enemy player food count
+        inputList.append(float(enemyInv.foodCount/11.0))
+
+        #enemy queen is dead
+        if enemyInv.getQueen() is None:
+            inputList.append(float(0)) #enemy queen health is not a concern
+            inputList.append(float(0)) #player ants closer to queen
+
+        else:
+            #enemy queen health
+            inputList.append(1.0 - float(enemyQueen.health/ float(UNIT_STATS[QUEEN][HEALTH])))
+            #TODO if we are down to no extra ants
+            if len(playerAnts) == 1 and playerAnts[0].type == QUEEN:
+                 inputList.append(float(0))
+            # player ants moving closer to the queen
+            for ant in playerAnts:
+                if ant.type == QUEEN:
+                    continue
+                else:
+                    inputList.append(float(1.0/float(self.vectorDistance(ant.coords, enemyQueen.coords))))
+
+        #player queen is dead
+        if playerInv.getQueen() is None:
+            inputList.append(0.0) #player queen health is not a concern
+            inputList.append(float(0)) #queen distance from enemies
+        else:
+            #player queen health
+            inputList.append(float(playerInv.getQueen().health) / float(UNIT_STATS[QUEEN][HEALTH]))
+            #queen distance from enemies
+            for ant in playerInv.ants:
+                if ant.type == QUEEN:
+                    enemyDistFromQueen = float(self.distClosestAnt(currentState, ant.coords))
+                    queenSafety = float(enemyDistFromQueen / maxDist)
+                    inputList.append(queenSafety)
+
+        if len(inputList) > 6:
+            inputList[:5]
+        while len(inputList) < 6:
+            inputList.append(0.0)
+
+
+        return inputList
+
+    # alpha_beta_search2
+    # Description: use minimax with alpha beta pruning to determine the best evaluation score
+    #
+    # Parameters:
+    #   self - the object pointer
+    #   node - the initial node, before any moves are explored
+    #
+    # Returns: the highest evaluating node
+    #
+    def alpha_beta_search2(self, node):
+        bestNode = self.max_value(node, -INFINITY, INFINITY, 0)
+        while bestNode["parent_node"]["parent_node"] is not None:
+            bestNode = bestNode["parent_node"]
+        return bestNode
+
     ##
     # vectorDistance
     # Description: Given two cartesian coordinates, determines the 
@@ -209,6 +629,7 @@ class AIPlayer(Player):
             resultingState = self.processMove(state, move)
             #create a newNode for the resulting state
             newNode = self.createNode(move, resultingState, node)
+           # print "Our Node Value: ", newNode["state_value"]
             # if a goal state has been found, stop evaluating other branches
             if newNode["state_value"] == 1.0:
                 #we have a goal state, no alpha_beta evaluation is needed
@@ -291,6 +712,7 @@ class AIPlayer(Player):
             resultingState = self.processMove(state, move)
             #create a newNode for the resulting state
             newNode = self.createNode(move, resultingState, node)
+            # print "Their Node Value: ", newNode["state_value"]
             # if a goal state has been found, stop evaluating other branches
             if newNode["state_value"] == 0.0:
                 #we have a goal state, no alpha_beta evaluation is needed
@@ -553,37 +975,7 @@ class AIPlayer(Player):
         else:
             return [(0, 0)]
             
-    
-    ##
-    #getMove
-    #Description: The getMove method corresponds to the play phase of the game 
-    #and requests from the player a Move object. All types are symbolic 
-    #constants which can be referred to in Constants.py. The move object has a 
-    #field for type (moveType) as well as field for relevant coordinate 
-    #information (coordList). If for instance the player wishes to move an ant, 
-    #they simply return a Move object where the type field is the MOVE_ANT constant 
-    #and the coordList contains a listing of valid locations starting with an Ant 
-    #and containing only unoccupied spaces thereafter. A build is similar to a move 
-    #except the type is set as BUILD, a buildType is given, and a single coordinate 
-    #is in the list representing the build location. For an end turn, no coordinates 
-    #are necessary, just set the type as END and return.
-    #
-    #Parameters:
-    #   currentState - The current state of the game at the time the Game is 
-    #       requesting a move from the player.(GameState)   
-    #
-    #Return: Move(moveType [int], coordList [list of 2-tuples of ints], buildType [int]
-    #
-    def getMove(self, currentState):
-        # save our id
-        self.playerId = currentState.whoseTurn
-        #create the initial node to analyze
-        initNode = self.createNode(None, currentState, None)
-        return self.alpha_beta_search(initNode)
 
-
-        # return the best move, found by recursively searching potential moves
-        #return self.exploreTree(currentState, currentState.whoseTurn, 0)
     
     
     ##
@@ -619,7 +1011,9 @@ class AIPlayer(Player):
     #   hasWon - True if the player has won the game, False if the player lost. (Boolean)
     #
     def registerWin(self, hasWon):
-        #method templaste, not implemented
-        pass
-
-        
+        print "###################################################\nGame Finished" \
+              "\nGame Count: ", self.gameCount,"\n###################################################\n"
+        print "Input Weight List: ", self.inputWeightList
+        print "Hidden Layer Weight List", self.layerWeightList
+        print "...Beginning Next Game\n\n"
+        self.gameCount = self.gameCount + 1
